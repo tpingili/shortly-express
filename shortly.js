@@ -2,7 +2,9 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var bcrypt = require('bcrypt-nodejs');
+var session = require('express-session');
+var cookieParser = require('cookie-parser');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -23,24 +25,26 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
 
-app.get('/', 
+app.get('/',
+function(req, res) {
+  //check if user is signed in
+  res.render('login');
+  //else /login
+});
+
+app.get('/create',
 function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
-function(req, res) {
-  res.render('index');
-});
-
-app.get('/links', 
+app.get('/links',
 function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   });
 });
 
-app.post('/links', 
+app.post('/links',
 function(req, res) {
   var uri = req.body.url;
 
@@ -77,8 +81,59 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
+app.get('/signup',
+function(req, res) {
+  res.render('signup');
+});
 
+app.get('/login',
+function(req, res) {
+  res.render('login');
+});
 
+app.post('/signup', function(req, res){
+  var username = req.body.username;
+  var password = req.body.password;
+  var salt;
+
+  bcrypt.genSalt(10, function(err, generatedSalt) {
+    if (err) {
+      console.log("Error generating salt...", err);
+      return;
+    }
+    salt = generatedSalt;
+    bcrypt.hash(password, salt,
+      null,
+      function(err, hashedPassword) {
+        if (err) {
+          console.log("Error generating hash for password...", err);
+          return;
+        }
+        console.log("Finished generating pw! It is: ", password);
+        password = hashedPassword;
+
+        new User({ username: username, password: password, salt: salt }).save()
+        .then(function(newUser){
+          console.log("newUser: " +newUser);
+          Users.add(newUser);
+          res.send(200, newUser);
+          util
+        });
+      }
+    );
+  });
+});
+
+app.post('/login', function(req, res){
+  util.authenticate(req.body.username, req.body.password, function(isValidUser){
+    if(isValidUser){
+      //do something setting up a session n cookie
+      res.render('/');
+    }else{
+      res.redirect('/login');
+    }
+  });
+});
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
