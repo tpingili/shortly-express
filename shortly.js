@@ -23,29 +23,25 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+app.use(cookieParser('supersecretpassword', {maxAge: 60000}));
+app.use(session());
 
 
-app.get('/',
-function(req, res) {
-  //check if user is signed in
-  res.render('login');
-  //else /login
+app.get('/', util.checkUser, function(req, res) {
+  res.render('/');
 });
 
-app.get('/create',
-function(req, res) {
+app.get('/create', util.checkUser, function(req, res) {
   res.render('index');
 });
 
-app.get('/links',
-function(req, res) {
+app.get('/links', util.checkUser, function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   });
 });
 
-app.post('/links',
-function(req, res) {
+app.post('/links', function(req, res) {
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -81,59 +77,45 @@ function(req, res) {
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
-app.get('/signup',
-function(req, res) {
+app.get('/signup', function(req, res) {
   res.render('signup');
 });
 
-app.get('/login',
-function(req, res) {
+app.get('/login', function(req, res) {
   res.render('login');
+});
+
+app.get('/logout', function(req, res) {
+  req.session.destroy(function(err) {
+    res.redirect('/login');
+  });
 });
 
 app.post('/signup', function(req, res){
   var username = req.body.username;
   var password = req.body.password;
-  var salt;
 
-  bcrypt.genSalt(10, function(err, generatedSalt) {
-    if (err) {
-      console.log("Error generating salt...", err);
-      return;
+  new User({username: username}).fetch()
+  .then(function(user) {
+    console.log(user);
+    if (!user) {
+      console.log("no user found from /signup fetch ")
+     // bcrypt.hash(password, null, null, function(err, hashedPassword) {
+      Users.create({username: username, password: password})
+      .then(function(user) {
+        util.createSession(req, res, user);
+      });
+    } else {
+      console.log('username exists, try another one');
+      res.redirect('/signup');
     }
-    salt = generatedSalt;
-    bcrypt.hash(password, salt,
-      null,
-      function(err, hashedPassword) {
-        if (err) {
-          console.log("Error generating hash for password...", err);
-          return;
-        }
-        console.log("Finished generating pw! It is: ", password);
-        password = hashedPassword;
-
-        new User({ username: username, password: password, salt: salt }).save()
-        .then(function(newUser){
-          console.log("newUser: " +newUser);
-          Users.add(newUser);
-          res.send(200, newUser);
-          util
-        });
-      }
-    );
   });
 });
 
 app.post('/login', function(req, res){
-  util.authenticate(req.body.username, req.body.password, function(isValidUser){
-    if(isValidUser){
-      //do something setting up a session n cookie
-      res.render('/');
-    }else{
-      res.redirect('/login');
-    }
-  });
+  util.authenticate(req, res);
 });
+
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
